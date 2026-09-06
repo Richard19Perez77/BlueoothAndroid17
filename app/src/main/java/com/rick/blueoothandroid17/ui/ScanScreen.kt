@@ -1,6 +1,7 @@
 package com.rick.blueoothandroid17.ui
 
 import android.bluetooth.BluetoothDevice
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -41,6 +42,7 @@ fun ScanScreen(
     onStartScan: () -> Unit,
     onStopScan: () -> Unit,
     onClearStatus: () -> Unit,
+    onDeviceClick: (ScannedDevice) -> Unit,
 ) {
     Scaffold(
         topBar = {
@@ -132,7 +134,7 @@ fun ScanScreen(
 
             Spacer(Modifier.height(12.dp))
             Text(
-                text = "Devices (${state.devices.size})",
+                text = "Devices (${state.devices.size}) — tap for GATT",
                 style = MaterialTheme.typography.titleSmall,
             )
             Spacer(Modifier.height(4.dp))
@@ -143,7 +145,7 @@ fun ScanScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(state.devices, key = { it.address }) { device ->
-                    DeviceRow(device)
+                    DeviceRow(device, onClick = { onDeviceClick(device) })
                 }
             }
         }
@@ -190,8 +192,13 @@ private fun StatusRow(
 }
 
 @Composable
-private fun DeviceRow(device: ScannedDevice) {
-    Column(modifier = Modifier.fillMaxWidth()) {
+private fun DeviceRow(device: ScannedDevice, onClick: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 4.dp),
+    ) {
         Text(
             text = device.name?.takeIf { it.isNotBlank() } ?: "Unknown device",
             style = MaterialTheme.typography.titleMedium,
@@ -253,6 +260,7 @@ private fun ScanScreenPreview() {
             onStartScan = {},
             onStopScan = {},
             onClearStatus = {},
+            onDeviceClick = {},
         )
     }
 }

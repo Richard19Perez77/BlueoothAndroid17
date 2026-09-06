@@ -1,8 +1,10 @@
 package com.rick.blueoothandroid17.bluetooth
 
+import android.annotation.SuppressLint
 import android.app.Application
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -10,6 +12,7 @@ import android.content.IntentFilter
 import android.os.Build
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -25,6 +28,9 @@ data class ScanUiState(
     val scanning: Boolean = false,
     val devices: List<ScannedDevice> = emptyList(),
     val statusMessage: String? = null,
+    /** Non-null when the device detail / GATT stub screen is open. */
+    val selectedDevice: ScannedDevice? = null,
+    val gatt: GattUiState = GattUiState(),
 )
 
 class BluetoothScanViewModel(application: Application) : AndroidViewModel(application) {
@@ -37,6 +43,9 @@ class BluetoothScanViewModel(application: Application) : AndroidViewModel(applic
 
     private val devicesByAddress = linkedMapOf<String, ScannedDevice>()
 
+    private val bluetoothManager =
+        application.getSystemService(BluetoothManager::class.java)
+
     private val scanner = BluetoothScanner(
         context = application,
         onDevice = { device -> mergeDevice(device) },
@@ -48,12 +57,32 @@ class BluetoothScanViewModel(application: Application) : AndroidViewModel(applic
         },
     )
 
+    private val gattClient = GattClient(
+        context = application,
+        onPhase = { phase ->
+            viewModelScope.launch(Dispatchers.Main.immediate) {
+                _uiState.update { it.copy(gatt = it.gatt.copy(phase = phase)) }
+            }
+        },
+        onServices = { services ->
+            viewModelScope.launch(Dispatchers.Main.immediate) {
+                _uiState.update { it.copy(gatt = it.gatt.copy(services = services)) }
+            }
+        },
+        onMessage = { message ->
+            viewModelScope.launch(Dispatchers.Main.immediate) {
+                _uiState.update { it.copy(gatt = it.gatt.copy(statusMessage = message)) }
+            }
+        },
+    )
+
     private val adapterStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action != BluetoothAdapter.ACTION_STATE_CHANGED) return
             refreshAdapterState()
             if (!scanner.isBluetoothEnabled) {
                 scanner.stop()
+                gattClient.close()
             }
         }
     }
@@ -92,7 +121,6 @@ class BluetoothScanViewModel(application: Application) : AndroidViewModel(applic
         val wasScanning = _uiState.value.scanning
         _uiState.update { it.copy(scanMode = mode) }
         if (wasScanning) {
-            // Restart so the active radios match the new mode.
             startScan()
         }
     }
@@ -129,16 +157,84 @@ class BluetoothScanViewModel(application: Application) : AndroidViewModel(applic
         _uiState.update { it.copy(statusMessage = null) }
     }
 
+    fun clearGattStatus() {
+        _uiState.update { it.copy(gatt = it.gatt.copy(statusMessage = null)) }
+    }
+
     /** System intent to ask the user to enable Bluetooth (preferred over adapter.enable()). */
     fun enableBluetoothIntent(): Intent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
 
-    /**
-     *  Merges a newly scanned device with an existing one in the adapter.
-     *
-     *  Keeps one list row per MAC address, even when Classic and BLE both see the same phone / speaker / sensor, or when the same device reports again with a new RSSI.
-     *
-     * @param incoming - a new device
-     */
+    /** Open device detail; stop scanning so the radio is free for GATT. */
+    fun openDevice(device: ScannedDevice) {
+        scanner.stop()
+        gattClient.close()
+        _uiState.update {
+            it.copy(
+                selectedDevice = device,
+                gatt = GattUiState(),
+                statusMessage = null,
+            )
+        }
+    }
+
+    fun closeDevice() {
+        gattClient.close()
+        _uiState.update {
+            it.copy(selectedDevice = null, gatt = GattUiState())
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    fun connectGatt() {
+        refreshPermissions()
+        refreshAdapterState()
+        val state = _uiState.value
+        val selected = state.selectedDevice
+        when {
+            selected == null -> return
+            !state.permissionsGranted -> {
+                _uiState.update {
+                    it.copy(gatt = it.gatt.copy(statusMessage = "Grant permissions first"))
+                }
+            }
+            !state.bluetoothEnabled -> {
+                _uiState.update {
+                    it.copy(gatt = it.gatt.copy(statusMessage = "Turn Bluetooth on first"))
+                }
+            }
+            !selected.seenOnBle -> {
+                _uiState.update {
+                    it.copy(
+                        gatt = it.gatt.copy(
+                            statusMessage = "GATT is a BLE path — this row was only seen on Classic",
+                        ),
+                    )
+                }
+            }
+            else -> {
+                scanner.stop()
+                val remote = bluetoothManager?.adapter?.getRemoteDevice(selected.address)
+                if (remote == null) {
+                    _uiState.update {
+                        it.copy(gatt = it.gatt.copy(statusMessage = "Could not resolve BluetoothDevice"))
+                    }
+                    return
+                }
+                gattClient.connect(remote)
+            }
+        }
+    }
+
+    fun disconnectGatt() {
+        gattClient.disconnect()
+    }
+
+    /** Call when the activity leaves the foreground. */
+    fun releaseRadios() {
+        scanner.stop()
+        gattClient.close()
+    }
+
     private fun mergeDevice(incoming: ScannedDevice) {
         viewModelScope.launch {
             val existing = devicesByAddress[incoming.address]
@@ -164,12 +260,19 @@ class BluetoothScanViewModel(application: Application) : AndroidViewModel(applic
                     compareByDescending<ScannedDevice> { it.rssi ?: Int.MIN_VALUE }
                         .thenBy { it.name ?: it.address },
                 )
-            _uiState.update { it.copy(devices = sorted) }
+            _uiState.update { state ->
+                state.copy(
+                    devices = sorted,
+                    selectedDevice = state.selectedDevice?.let { selected ->
+                        sorted.find { it.address == selected.address } ?: selected
+                    },
+                )
+            }
         }
     }
 
     override fun onCleared() {
-        scanner.stop()
+        releaseRadios()
         runCatching {
             getApplication<Application>().unregisterReceiver(adapterStateReceiver)
         }

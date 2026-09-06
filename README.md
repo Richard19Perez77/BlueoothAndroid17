@@ -13,7 +13,8 @@ It is intentionally dual-purpose:
 - Requests the correct runtime permissions for the device’s API level
 - Scans in **Classic**, **BLE**, or **Both** modes
 - Lists devices with name, address, RSSI, bond state, and radio type
-- Stops scanning when the app leaves the foreground
+- Tap a device → **GATT client stub**: connect → discover services → list UUIDs → disconnect
+- Stops scanning / closes GATT when the app leaves the foreground
 
 ## Quick start
 
@@ -37,11 +38,13 @@ app/src/main/java/com/rick/blueoothandroid17/
 ├── bluetooth/
 │   ├── BluetoothPermissions.kt     # Legacy vs modern permission model
 │   ├── BluetoothScanner.kt         # Classic discovery + BLE scan
-│   ├── BluetoothScanViewModel.kt   # UI state, merge devices by MAC
+│   ├── GattClient.kt / GattModels  # GATT connect + service discovery stub
+│   ├── BluetoothScanViewModel.kt   # UI state, merge devices, GATT
 │   ├── ScanMode.kt
 │   └── ScannedDevice.kt
 └── ui/
-    └── ScanScreen.kt               # Compose scanner UI
+    ├── ScanScreen.kt               # Compose scanner UI
+    └── DeviceDetailScreen.kt       # Device + GATT phase / services
 ```
 
 ## Docs
@@ -50,7 +53,8 @@ app/src/main/java/com/rick/blueoothandroid17/
 
 ## Roadmap (planned)
 
-- Tap a BLE device → GATT connect / services
+- Read / notify a characteristic
+- Classic `BluetoothSocket` stub
 - Advertise (phone as peripheral)
 - Pairing / bonding UI
 - Companion Device Manager

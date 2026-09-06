@@ -16,6 +16,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rick.blueoothandroid17.bluetooth.BluetoothPermissions
 import com.rick.blueoothandroid17.bluetooth.BluetoothScanViewModel
+import com.rick.blueoothandroid17.ui.DeviceDetailScreen
 import com.rick.blueoothandroid17.ui.ScanScreen
 import com.rick.blueoothandroid17.ui.theme.BlueoothAndroid17Theme
 
@@ -51,7 +52,6 @@ private fun ScannerApp(viewModel: BluetoothScanViewModel) {
         viewModel.refreshAdapterState()
     }
 
-    // Stop the radio when the activity leaves the foreground; refresh when it returns.
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
@@ -59,7 +59,7 @@ private fun ScannerApp(viewModel: BluetoothScanViewModel) {
                     viewModel.refreshPermissions()
                     viewModel.refreshAdapterState()
                 }
-                Lifecycle.Event.ON_STOP -> viewModel.stopScan()
+                Lifecycle.Event.ON_STOP -> viewModel.releaseRadios()
                 else -> Unit
             }
         }
@@ -67,17 +67,30 @@ private fun ScannerApp(viewModel: BluetoothScanViewModel) {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    ScanScreen(
-        state = state,
-        onRequestPermissions = {
-            permissionLauncher.launch(BluetoothPermissions.requiredRuntimePermissions())
-        },
-        onEnableBluetooth = {
-            enableBtLauncher.launch(viewModel.enableBluetoothIntent())
-        },
-        onScanModeSelected = viewModel::setScanMode,
-        onStartScan = viewModel::startScan,
-        onStopScan = viewModel::stopScan,
-        onClearStatus = viewModel::clearStatus,
-    )
+    val selected = state.selectedDevice
+    if (selected != null) {
+        DeviceDetailScreen(
+            device = selected,
+            gatt = state.gatt,
+            onBack = viewModel::closeDevice,
+            onConnectGatt = viewModel::connectGatt,
+            onDisconnectGatt = viewModel::disconnectGatt,
+            onClearGattStatus = viewModel::clearGattStatus,
+        )
+    } else {
+        ScanScreen(
+            state = state,
+            onRequestPermissions = {
+                permissionLauncher.launch(BluetoothPermissions.requiredRuntimePermissions())
+            },
+            onEnableBluetooth = {
+                enableBtLauncher.launch(viewModel.enableBluetoothIntent())
+            },
+            onScanModeSelected = viewModel::setScanMode,
+            onStartScan = viewModel::startScan,
+            onStopScan = viewModel::stopScan,
+            onClearStatus = viewModel::clearStatus,
+            onDeviceClick = viewModel::openDevice,
+        )
+    }
 }

@@ -120,8 +120,11 @@ Start here, in order:
 4. **`BluetoothScanViewModel.kt`**  
    Holds UI state, starts/stops the scanner, merges devices, listens for adapter on/off.
 
-5. **`MainActivity.kt` + `ScanScreen.kt`**  
-   Permission launcher, enable-Bluetooth launcher, Compose list UI.
+5. **`MainActivity.kt` + `ScanScreen.kt` + `DeviceDetailScreen.kt`**  
+   Permissions, enable-BT, scan list, tap → GATT phase UI.
+
+6. **`GattClient.kt` / `GattModels.kt`**  
+   Connect / discover / disconnect state machine.
 
 ### Suggested experiment
 
@@ -139,22 +142,39 @@ Start here, in order:
 | **Adapter** | The phone’s Bluetooth radio controller (`BluetoothAdapter`) |
 | **MAC / address** | Hardware identifier string like `AA:BB:CC:DD:EE:FF` |
 | **Bonded / paired** | Device has a saved security relationship with the phone |
-| **GATT** | BLE connection protocol for services/characteristics (next feature) |
+| **GATT** | BLE connection protocol for services/characteristics (stub in app now) |
 | **Advertise** | Phone broadcasts so others can find it (peripheral role) |
 | **LE Audio** | Newer low-energy audio profile family |
 | **Channel Sounding / Ranging** | Newer distance measurement APIs (Android 16+) |
 
 ---
 
-## 8. What to learn next (same project)
+## 8. GATT client stub (in the app now)
 
-Build in this order so each step reuses the last:
+Tap a scanned device → detail screen → **Connect GATT**.
 
-1. **GATT connect** — tap a BLE row, connect, list services.
-2. **Read / notify** — pull a characteristic, subscribe to updates.
-3. **Advertise** — add `BLUETOOTH_ADVERTISE`, make the phone discoverable as a peripheral.
-4. **Companion Device Manager** — Play-friendly association flow for accessories.
-5. **RangingManager** — precise distance when hardware + Android version support it.
+State machine to follow in code (`GattPhase` / `GattClient`):
+
+`Idle → Connecting → Connected → Discovering → Ready`  
+(failures go to `Failed`; leave with `Closing → Idle`)
+
+| Piece | Role |
+|---|---|
+| `BluetoothDevice.connectGatt(...)` | Start client connection to the remote GATT server |
+| `BluetoothGattCallback` | Async results (connection + discovery) |
+| `discoverServices()` | Ask the peripheral what services it exposes |
+| Service / characteristic UUIDs | What it “offers” at the GATT layer |
+| `disconnect()` / `close()` | Tear down (always close when done) |
+
+Read next: [Connect to a GATT server](https://developer.android.com/develop/connectivity/bluetooth/ble/connect-gatt-server).
+
+### Still to learn next
+
+1. **Read / notify** — pull a characteristic, subscribe to updates.
+2. **Classic `BluetoothSocket`** — RFCOMM stub for the Classic overview path.
+3. **Advertise** — phone as peripheral (`BLUETOOTH_ADVERTISE`).
+4. **Companion Device Manager** — association / presence.
+5. **RangingManager** — distance when hardware + OS support it.
 
 Scanning stays the foundation: if you cannot find the device, nothing later will work.
 
