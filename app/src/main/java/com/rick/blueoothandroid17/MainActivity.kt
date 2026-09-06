@@ -52,18 +52,25 @@ private fun ScannerApp(viewModel: BluetoothScanViewModel) {
         viewModel.refreshAdapterState()
     }
 
+    /**
+     * tie the activity compose lifecycle to bluetooth work
+     * connects when user leaves or comes back
+     */
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
+                // refresh permissions, adapter on/off
                 Lifecycle.Event.ON_START -> {
                     viewModel.refreshPermissions()
                     viewModel.refreshAdapterState()
                 }
+                // release radios from stop scan and close GATT
                 Lifecycle.Event.ON_STOP -> viewModel.releaseRadios()
                 else -> Unit
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
+        // remove the observer, avoid leaking on composition loss
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 

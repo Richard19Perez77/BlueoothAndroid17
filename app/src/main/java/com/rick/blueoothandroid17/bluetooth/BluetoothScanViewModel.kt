@@ -181,12 +181,27 @@ class BluetoothScanViewModel(application: Application) : AndroidViewModel(applic
         }
     }
 
+    /**
+     * Re-read runtime Bluetooth permissions into [ScanUiState.permissionsGranted].
+     *
+     * Call after the permission dialog returns, when the activity resumes (ON_START),
+     * and before starting a scan or GATT connect — the user may have changed Nearby devices /
+     * location permission in system settings.
+     */
     fun refreshPermissions() {
         _uiState.update {
             it.copy(permissionsGranted = BluetoothPermissions.hasAll(getApplication()))
         }
     }
 
+    /**
+     * Re-read whether a Bluetooth adapter exists and whether it is currently on
+     * into [ScanUiState.bluetoothSupported] / [ScanUiState.bluetoothEnabled].
+     *
+     * Call on start, after the enable-Bluetooth system dialog, and from
+     * [BluetoothAdapter.ACTION_STATE_CHANGED] so the UI chips stay accurate when
+     * the user toggles Bluetooth outside the app.
+     */
     fun refreshAdapterState() {
         _uiState.update {
             it.copy(
@@ -196,6 +211,11 @@ class BluetoothScanViewModel(application: Application) : AndroidViewModel(applic
         }
     }
 
+    /**
+     *  Set the scan mode.
+     *
+     * @param mode - which radios to listen on
+     */
     fun setScanMode(mode: ScanMode) {
         val wasScanning = _uiState.value.scanning
         _uiState.update { it.copy(scanMode = mode) }
@@ -204,9 +224,14 @@ class BluetoothScanViewModel(application: Application) : AndroidViewModel(applic
         }
     }
 
+    /**
+     *  Start scanning.
+     */
     fun startScan() {
         refreshPermissions()
         refreshAdapterState()
+
+        // use guard-clause style, check fails, run real work in else
         val state = _uiState.value
         when {
             !state.bluetoothSupported -> {
@@ -221,6 +246,7 @@ class BluetoothScanViewModel(application: Application) : AndroidViewModel(applic
                 _uiState.update { it.copy(statusMessage = "Grant permissions first") }
             }
 
+            // success here, prevents a long "if && if && if chain", see above
             else -> {
                 devicesByAddress.clear()
                 _uiState.update {
