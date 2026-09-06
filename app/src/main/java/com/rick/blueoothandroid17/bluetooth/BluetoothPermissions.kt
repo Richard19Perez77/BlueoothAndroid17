@@ -38,8 +38,9 @@ object BluetoothPermissions {
 
     fun hasAll(context: Context): Boolean =
         requiredRuntimePermissions().all { permission ->
+            // validate against listed permission from passed in context
             ContextCompat.checkSelfPermission(context, permission) ==
-                PackageManager.PERMISSION_GRANTED
+                PackageManager.PERMISSION_GRANTED // each must be granted
         }
 
     /** Short label for the UI so the evolution is visible on-device. */

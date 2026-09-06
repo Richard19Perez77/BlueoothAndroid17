@@ -63,6 +63,9 @@ class BluetoothScanner(
     @Volatile
     private var scanning = false
 
+    /**
+     *  Classic Bluetooth discovery.
+     */
     private val classicReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
@@ -105,7 +108,22 @@ class BluetoothScanner(
     private var classicReceiverRegistered = false
     private var leScanActive = false
 
+    /**
+     *  BLE discovery.
+     */
     private val leScanCallback = object : ScanCallback() {
+
+        /**
+         *  BLE discovery hit:
+         *
+         *
+         * @param callbackType - one of three values
+         *                          [ScanSettings.CALLBACK_TYPE_ALL_MATCHES]
+         *                          [ScanSettings.CALLBACK_TYPE_NEW_MATCH]
+         *                          [ScanSettings.CALLBACK_TYPE_MATCH_LOST]
+         *
+         * @param result - [ScanResult] carries a remote [BluetoothDevice]
+         */
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             emit(result.device, result.rssi, fromClassic = false, fromBle = true)
         }
@@ -231,6 +249,14 @@ class BluetoothScanner(
         leScanActive = false
     }
 
+    /**
+     *
+     *
+     * @param device - [BluetoothDevice] carries a remote [BluetoothDevice]
+     * @param rssi - signal strength
+     * @param fromClassic - true if Classic
+     * @param fromBle - true if BLE
+     */
     @SuppressLint("MissingPermission")
     private fun emit(
         device: BluetoothDevice,

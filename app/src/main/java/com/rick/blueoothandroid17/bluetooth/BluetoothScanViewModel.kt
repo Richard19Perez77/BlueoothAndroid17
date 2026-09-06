@@ -19,6 +19,28 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+/**
+ *  UI-facing device scan state.
+ *
+ *  Bluetooth is async, this state is the translation layer.
+ *      hardware events -> fields -> widgets
+ *
+ *  VM functions, startScan, openDevice, connectGatt, receiver,...
+ *      update the state and the UI recomposes.
+ *
+ * Default values are needed so first frame before init refreshes still renders without null crashes.
+ *
+ * @property bluetoothSupported - true if the device supports Bluetooth
+ * @property bluetoothEnabled - true if Bluetooth is on
+ * @property permissionsGranted  - true if all required permissions are granted
+ * @property permissionModelLabel - human-readable label of the permissions
+ * @property scanMode - which radios to listen on
+ * @property scanning - true if scanning
+ * @property devices - list of devices
+ * @property statusMessage - message to show in the UI, nullable and dismissable
+ * @property selectedDevice - non-null when the device detail / GATT stub screen is open
+ * @property gatt - GattUiState for device details
+ */
 data class ScanUiState(
     val bluetoothSupported: Boolean = true,
     val bluetoothEnabled: Boolean = false,
@@ -33,9 +55,19 @@ data class ScanUiState(
     val gatt: GattUiState = GattUiState(),
 )
 
+/**
+ * ViewModel for managing the Bluetooth scan state and interactions.
+ *
+ * @constructor - Application context
+ *
+ *
+ * @param application - application context
+ */
 class BluetoothScanViewModel(application: Application) : AndroidViewModel(application) {
     private val _uiState = MutableStateFlow(
         ScanUiState(
+            // overrides permissionsGranted from a real check
+            // first screen won't say 'need permissions' when granted
             permissionsGranted = BluetoothPermissions.hasAll(application),
         )
     )
@@ -46,6 +78,9 @@ class BluetoothScanViewModel(application: Application) : AndroidViewModel(applic
     private val bluetoothManager =
         application.getSystemService(BluetoothManager::class.java)
 
+    /**
+     *  Scanner for discovering Bluetooth devices.
+     */
     private val scanner = BluetoothScanner(
         context = application,
         onDevice = { device -> mergeDevice(device) },
@@ -76,13 +111,38 @@ class BluetoothScanViewModel(application: Application) : AndroidViewModel(applic
         },
     )
 
+    /**
+     *  System level service introduced in Android 4.3 API 18:
+     *
+     *
+     */
     private val adapterStateReceiver = object : BroadcastReceiver() {
+
+        /**
+         *
+         * Bluetooth adapter turned on/off.
+         *  Relate state transitions to the UI state and stop scanning or close GATT if Bluetooth is off.
+         *
+         *  Listens for ACTION_STATE_CHANGED and Android sends this whenever the phone's Bluetooth radio state changes (STATE_ON, STATE_OFF, turning on/off, etc.)
+         *
+         *  Registered in vm init
+         *  Unregistered in vm onCleared
+         *
+         *  System level service introduced in Android 4.3 API 18:
+         *
+         *  When Bluetooth toggles, refresh the UI;
+         *      if it's off, stop the scanner and close GATT.
+         *
+         * @param context - application context
+         * @param intent - Intent with ACTION_STATE_CHANGED
+         */
         override fun onReceive(context: Context, intent: Intent) {
+            // ignore wrong action
             if (intent.action != BluetoothAdapter.ACTION_STATE_CHANGED) return
-            refreshAdapterState()
+            refreshAdapterState() // UI chips (BT on / off)
             if (!scanner.isBluetoothEnabled) {
-                scanner.stop()
-                gattClient.close()
+                scanner.stop() // end discovering
+                gattClient.close() // drop any GATT session
             }
         }
     }
@@ -133,12 +193,15 @@ class BluetoothScanViewModel(application: Application) : AndroidViewModel(applic
             !state.bluetoothSupported -> {
                 _uiState.update { it.copy(statusMessage = "Bluetooth not supported") }
             }
+
             !state.bluetoothEnabled -> {
                 _uiState.update { it.copy(statusMessage = "Turn Bluetooth on first") }
             }
+
             !state.permissionsGranted -> {
                 _uiState.update { it.copy(statusMessage = "Grant permissions first") }
             }
+
             else -> {
                 devicesByAddress.clear()
                 _uiState.update {
@@ -197,11 +260,13 @@ class BluetoothScanViewModel(application: Application) : AndroidViewModel(applic
                     it.copy(gatt = it.gatt.copy(statusMessage = "Grant permissions first"))
                 }
             }
+
             !state.bluetoothEnabled -> {
                 _uiState.update {
                     it.copy(gatt = it.gatt.copy(statusMessage = "Turn Bluetooth on first"))
                 }
             }
+
             !selected.seenOnBle -> {
                 _uiState.update {
                     it.copy(
@@ -211,6 +276,7 @@ class BluetoothScanViewModel(application: Application) : AndroidViewModel(applic
                     )
                 }
             }
+
             else -> {
                 scanner.stop()
                 val remote = bluetoothManager?.adapter?.getRemoteDevice(selected.address)
@@ -235,9 +301,27 @@ class BluetoothScanViewModel(application: Application) : AndroidViewModel(applic
         gattClient.close()
     }
 
+    /**
+     *
+     *  Keep one list row per MAC as scan callbacks stream in, then refresh the UI state.
+     *      Including the open detail screen if that device is selected
+     *
+     *  Classic and BLE can both see the same hardware, and the same device can report many times with new RSSI/name.
+     *      Without merging you'd get duplicate rows and stale detail data.
+     *
+     *  Same address = one device
+     *      Fold in better name/RSSI/bond/radio flags
+     *      Re-sort and keep open detail row in sync
+     *
+     * @param incoming - device to add or merge
+     */
     private fun mergeDevice(incoming: ScannedDevice) {
         viewModelScope.launch {
+
+            // lookup by MAC
             val existing = devicesByAddress[incoming.address]
+
+            // build merged with no existing and existing then copy
             val merged = existing?.copy(
                 name = incoming.name?.takeIf { it.isNotBlank() } ?: existing.name,
                 rssi = incoming.rssi ?: existing.rssi,
@@ -254,23 +338,34 @@ class BluetoothScanViewModel(application: Application) : AndroidViewModel(applic
                 seenOnBle = existing.seenOnBle || incoming.seenOnBle,
             )
                 ?: incoming
+
+            // save into ScannedDevice's Map by address
             devicesByAddress[incoming.address] = merged
             val sorted = devicesByAddress.values
                 .sortedWith(
-                    compareByDescending<ScannedDevice> { it.rssi ?: Int.MIN_VALUE }
-                        .thenBy { it.name ?: it.address },
+                    compareByDescending<ScannedDevice> {
+                        it.rssi ?: Int.MIN_VALUE // strongest rssi first
+                    }.thenBy { it.name ?: it.address }, // then name, address
                 )
             _uiState.update { state ->
                 state.copy(
+                    // set the scan list
                     devices = sorted,
+                    // replace with updated row from sorted or old selection
                     selectedDevice = state.selectedDevice?.let { selected ->
-                        sorted.find { it.address == selected.address } ?: selected
+                        sorted.find {
+                            it.address == selected.address
+                        } ?: selected
                     },
                 )
             }
         }
     }
 
+    /**
+     *  Called when the ViewModel is no longer used and will be destroyed.
+     *
+     */
     override fun onCleared() {
         releaseRadios()
         runCatching {
