@@ -132,28 +132,32 @@ class BluetoothScanViewModel(application: Application) : AndroidViewModel(applic
     /** System intent to ask the user to enable Bluetooth (preferred over adapter.enable()). */
     fun enableBluetoothIntent(): Intent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
 
+    /**
+     *  Merges a newly scanned device with an existing one in the adapter.
+     *
+     *  Keeps one list row per MAC address, even when Classic and BLE both see the same phone / speaker / sensor, or when the same device reports again with a new RSSI.
+     *
+     * @param incoming - a new device
+     */
     private fun mergeDevice(incoming: ScannedDevice) {
         viewModelScope.launch {
             val existing = devicesByAddress[incoming.address]
-            val merged = if (existing == null) {
-                incoming
-            } else {
-                existing.copy(
-                    name = incoming.name?.takeIf { it.isNotBlank() } ?: existing.name,
-                    rssi = incoming.rssi ?: existing.rssi,
-                    bondState = when {
-                        incoming.bondState != BluetoothDevice.BOND_NONE -> incoming.bondState
-                        else -> existing.bondState
-                    },
-                    deviceType = if (incoming.deviceType != BluetoothDevice.DEVICE_TYPE_UNKNOWN) {
-                        incoming.deviceType
-                    } else {
-                        existing.deviceType
-                    },
-                    seenOnClassic = existing.seenOnClassic || incoming.seenOnClassic,
-                    seenOnBle = existing.seenOnBle || incoming.seenOnBle,
-                )
-            }
+            val merged = existing?.copy(
+                name = incoming.name?.takeIf { it.isNotBlank() } ?: existing.name,
+                rssi = incoming.rssi ?: existing.rssi,
+                bondState = when {
+                    incoming.bondState != BluetoothDevice.BOND_NONE -> incoming.bondState
+                    else -> existing.bondState
+                },
+                deviceType = if (incoming.deviceType != BluetoothDevice.DEVICE_TYPE_UNKNOWN) {
+                    incoming.deviceType
+                } else {
+                    existing.deviceType
+                },
+                seenOnClassic = existing.seenOnClassic || incoming.seenOnClassic,
+                seenOnBle = existing.seenOnBle || incoming.seenOnBle,
+            )
+                ?: incoming
             devicesByAddress[incoming.address] = merged
             val sorted = devicesByAddress.values
                 .sortedWith(

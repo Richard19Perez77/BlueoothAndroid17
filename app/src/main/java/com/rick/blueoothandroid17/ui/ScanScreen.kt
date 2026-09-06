@@ -213,9 +213,17 @@ private fun DeviceRow(device: ScannedDevice) {
     }
 }
 
+/**
+ *
+ *  Turns Android's numeric bond state into a short label for the UI.
+ *
+ * @param bondState - official values
+ * @return a string representation of the bond state
+ */
 private fun bondLabel(bondState: Int): String = when (bondState) {
     BluetoothDevice.BOND_BONDED -> "Bonded"
     BluetoothDevice.BOND_BONDING -> "Bonding"
+    BluetoothDevice.BOND_NONE -> "None"
     else -> "Not bonded"
 }
 

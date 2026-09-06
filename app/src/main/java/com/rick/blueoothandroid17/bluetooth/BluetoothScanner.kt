@@ -1,5 +1,6 @@
 package com.rick.blueoothandroid17.bluetooth
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
@@ -13,6 +14,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
 import android.util.Log
+import androidx.annotation.RequiresPermission
 
 /**
  * Dual-mode discovery:
@@ -33,6 +35,16 @@ class BluetoothScanner(
     private val bluetoothManager =
         appContext.getSystemService(BluetoothManager::class.java)
 
+    /**
+     *  Local BL adapter, bluetooth radio. entry point for bl interaction.
+     *
+     *  Discover bl devices, query lists of bonded paired devices.
+     *
+     *  Instantiate a [BluetoothDevice] using a known MAC address.
+     *
+     *  Create a [android.bluetooth.BluetoothServerSocket]
+     *      Listen for communications from other devices
+     */
     val adapter: BluetoothAdapter? = bluetoothManager?.adapter
 
     val isBluetoothSupported: Boolean get() = adapter != null
@@ -45,6 +57,15 @@ class BluetoothScanner(
     private val classicReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
+                /**
+                 *  Classic discovery hit:
+                 *      Intent carries a remote [BluetoothDevice]
+                 *      (name, address, class, bond state)
+                 *      plus optional RSSI
+                 *
+                 *  That device can later be used to connect
+                 *      (e.g. via [android.bluetooth.BluetoothSocket])
+                 */
                 BluetoothDevice.ACTION_FOUND -> {
                     val device = intent.parcelableDevice() ?: return
                     val rssi = intent.getShortExtra(BluetoothDevice.EXTRA_RSSI, Short.MIN_VALUE)
@@ -53,6 +74,14 @@ class BluetoothScanner(
                     emit(device, rssi, fromClassic = true, fromBle = false)
                 }
 
+                /**
+                 *  Classic discovery is time-limited:
+                 *      After you call startDiscovery().
+                 *      Android searched for a while, then stops and broadcasts ACTION_DISCOVERY_FINISHED.
+                 *      You don't have to stop Classic yourself for that cycle to end.
+                 *
+                 *  Without this check, finishing Classic in Both mode would flash the UI to Idle while BLE was still delivering devices.
+                 */
                 BluetoothAdapter.ACTION_DISCOVERY_FINISHED -> {
                     // Classic discovery ends on its own; if BLE is still running, stay "scanning".
                     if (adapter?.bluetoothLeScanner == null || !leScanActive) {
@@ -76,6 +105,7 @@ class BluetoothScanner(
             results.forEach { onScanResult(ScanSettings.CALLBACK_TYPE_ALL_MATCHES, it) }
         }
 
+        @RequiresPermission(Manifest.permission.BLUETOOTH_SCAN)
         override fun onScanFailed(errorCode: Int) {
             Log.w(TAG, "BLE scan failed: $errorCode")
             onError("BLE scan failed (code $errorCode)")
@@ -89,7 +119,9 @@ class BluetoothScanner(
 
     @SuppressLint("MissingPermission")
     fun start(mode: ScanMode) {
-        val bt = adapter
+        // copy adapter once for same instance passing into start methods
+        // instead of ?.let and use you can null check a copy and use it a lot
+        val bt = adapter // adapter is nullable, Kotlin won't smart cast a property the way it does with a local val.
         if (bt == null) {
             onError("Bluetooth is not supported on this device")
             return
@@ -223,6 +255,16 @@ private fun BluetoothDevice.safeName(): String? =
         null
     }
 
+/**
+ *
+ *  Helper method pulls a [BluetoothDevice] out of an [Intent]
+ *
+ *  When Classic scan finds something, Android sends ACTION_FOUND with extras.
+ *
+ *  One of them is the BlutoothDevice.EXTRA_DEVICE and cast to [BluetoothDevice]
+ *
+ * @return a [BluetoothDevice] or null if not found
+ */
 @Suppress("DEPRECATION")
 private fun Intent.parcelableDevice(): BluetoothDevice? =
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
