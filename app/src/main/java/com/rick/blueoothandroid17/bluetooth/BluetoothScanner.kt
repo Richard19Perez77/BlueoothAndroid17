@@ -109,29 +109,64 @@ class BluetoothScanner(
     private var leScanActive = false
 
     /**
-     *  BLE discovery.
+     * BLE scanner callbacks [BluetoothLeScanner::startScan].
+     *
+     * Unlike Classic discovery (broadcast [Intent]s)
+     *      BLE delivers hits here directly.
      */
     private val leScanCallback = object : ScanCallback() {
 
         /**
-         *  BLE discovery hit:
+         * One BLE advertisement / scan response was observed.
          *
+         * This is the usual path with our current [ScanSettings]
+         *      (no report delay).
          *
-         * @param callbackType - one of three values
-         *                          [ScanSettings.CALLBACK_TYPE_ALL_MATCHES]
-         *                          [ScanSettings.CALLBACK_TYPE_NEW_MATCH]
-         *                          [ScanSettings.CALLBACK_TYPE_MATCH_LOST]
+         * Android may call this often for the same device as packets keep arriving;
+         *      [emit] → [BluetoothScanViewModel::mergeDevice]
+         *          keeps a single row per MAC and updates RSSI.
          *
-         * @param result - [ScanResult] carries a remote [BluetoothDevice]
+         * @param callbackType - How this result relates to match filters / settings, e.g.
+         *  [ScanSettings.CALLBACK_TYPE_ALL_MATCHES] (typical),
+         *  [ScanSettings.CALLBACK_TYPE_FIRST_MATCH],
+         *  [ScanSettings.CALLBACK_TYPE_MATCH_LOST].
+         *
+         *  We do not branch on it yet — every hit is forwarded the same way.
+         *
+         * @param result Platform scan payload: [ScanResult.getDevice], RSSI, and
+         *  (not used yet) [ScanResult.getScanRecord] for advertised UUIDs / manufacturer data.
          */
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             emit(result.device, result.rssi, fromClassic = false, fromBle = true)
         }
 
+        /**
+         *
+         *  Called when a batch of BLE scan results is available.
+         *
+         *  It's there as a safety net, not because you're using batch scanning today.
+         *
+         *  BLE scan callbacks come in two flavors:
+         *      onScanResult
+         *      onBatchScanResults
+         *
+         *  CALLBACK_TYPE_ALL_MATCHES -
+         *
+         * @param results - list of [ScanResult]s
+         */
         override fun onBatchScanResults(results: MutableList<ScanResult>) {
-            results.forEach { onScanResult(ScanSettings.CALLBACK_TYPE_ALL_MATCHES, it) }
+            results.forEach {
+                // emit all results
+                onScanResult(ScanSettings.CALLBACK_TYPE_ALL_MATCHES, it)
+            }
         }
 
+        /**
+         *
+         *  BLE scan failed.
+         *
+         * @param errorCode - BLE scan error code
+         */
         @RequiresPermission(Manifest.permission.BLUETOOTH_SCAN)
         override fun onScanFailed(errorCode: Int) {
             Log.w(TAG, "BLE scan failed: $errorCode")
@@ -144,6 +179,11 @@ class BluetoothScanner(
         }
     }
 
+    /**
+     *  Start scanning.
+     *
+     * @param mode - which radios to listen on
+     */
     @SuppressLint("MissingPermission")
     fun start(mode: ScanMode) {
         // copy adapter once for same instance passing into start methods
@@ -178,6 +218,11 @@ class BluetoothScanner(
         }
     }
 
+    /**
+     *
+     *  Stop scanning.
+     *
+     */
     @SuppressLint("MissingPermission")
     fun stop() {
         val bt = adapter
@@ -189,6 +234,12 @@ class BluetoothScanner(
         }
     }
 
+    /**
+     *
+     *  Classic Bluetooth discovery.
+     *
+     * @param bt - [BluetoothAdapter]
+     */
     @SuppressLint("MissingPermission")
     private fun startClassic(bt: BluetoothAdapter) {
         if (!classicReceiverRegistered) {
@@ -214,6 +265,11 @@ class BluetoothScanner(
         }
     }
 
+    /**
+     *  Stop Classic Bluetooth discovery.
+     *
+     * @param bt - [BluetoothAdapter]
+     */
     @SuppressLint("MissingPermission")
     private fun stopClassic(bt: BluetoothAdapter?) {
         if (bt?.isDiscovering == true) {
@@ -225,6 +281,11 @@ class BluetoothScanner(
         }
     }
 
+    /**
+     *  Start BLE scanning.
+     *
+     * @param bt - [BluetoothAdapter]
+     */
     @SuppressLint("MissingPermission")
     private fun startBle(bt: BluetoothAdapter) {
         val scanner = bt.bluetoothLeScanner
@@ -240,6 +301,10 @@ class BluetoothScanner(
         leScanActive = true
     }
 
+    /**
+     *  Stop BLE scanning.
+     *
+     */
     @SuppressLint("MissingPermission")
     private fun stopBleOnly() {
         if (!leScanActive) return
@@ -251,6 +316,9 @@ class BluetoothScanner(
 
     /**
      *
+     *  Emits a scanned device event
+     *      turn a raw discovery hit into a ScannedDevice
+     *      hands it to the app via the onDevice callback
      *
      * @param device - [BluetoothDevice] carries a remote [BluetoothDevice]
      * @param rssi - signal strength
@@ -282,13 +350,19 @@ class BluetoothScanner(
     }
 }
 
+/**
+ *
+ *  Returns the name of the Bluetooth device, or null if not available.
+ *
+ * @return - [name] from [BluetoothDevice::name] or null if not available
+ */
 @SuppressLint("MissingPermission")
 private fun BluetoothDevice.safeName(): String? =
     try {
         // name can throw / return null without CONNECT on API 31+; permission is checked upstream.
         name
-    } catch (_: SecurityException) {
-        null
+    } catch (_: SecurityException) { // privileged operation, not string access
+        null // permission for [BLUETOOTH_CONNECT] not granted will throw
     }
 
 /**

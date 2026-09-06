@@ -92,6 +92,27 @@ class BluetoothScanViewModel(application: Application) : AndroidViewModel(applic
         },
     )
 
+    /**
+     *
+     *  GATT client for connecting to Bluetooth devices and discovering services.
+     *
+     *  Allow Compose to show phase, services and messages
+     *
+     *  GattClient (Bluetooth callbacks, often binder thread)
+     *     │
+     *     ├─ onPhase(phase)      → uiState.gatt.phase
+     *     ├─ onServices(list)    → uiState.gatt.services
+     *     └─ onMessage(text)     → uiState.gatt.statusMessage
+     *
+     * Dispatchers.Main.immediate
+     *      UI state should be updated in a controlled way on the main dispatcher.
+     *
+     *  Build one GattClient for the VM
+     *      Whenever it reports phase/services/message
+     *      Copy that into ScanUiState.gatt on the main thread.
+     *
+     *  Called throughout the VM here and in the UI.
+     */
     private val gattClient = GattClient(
         context = application,
         onPhase = { phase ->
@@ -113,8 +134,6 @@ class BluetoothScanViewModel(application: Application) : AndroidViewModel(applic
 
     /**
      *  System level service introduced in Android 4.3 API 18:
-     *
-     *
      */
     private val adapterStateReceiver = object : BroadcastReceiver() {
 
