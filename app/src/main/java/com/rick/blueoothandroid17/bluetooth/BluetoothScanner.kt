@@ -32,6 +32,15 @@ class BluetoothScanner(
 ) {
     private val appContext = context.applicationContext
 
+    /**
+     *  System level service introduced in Android 4.3 API 18:
+     *      Provides a centralized way to access Bluetooth functionality on the device
+     *      A wrapper and manger for both Classic Bluetooth and Bluetooth Low Energy
+     *
+     *  Used to get the adapter, a local Bluetooth radio.
+     *  Full (GATT server/client) the generic attribute profile.
+     *
+     */
     private val bluetoothManager =
         appContext.getSystemService(BluetoothManager::class.java)
 
@@ -121,7 +130,8 @@ class BluetoothScanner(
     fun start(mode: ScanMode) {
         // copy adapter once for same instance passing into start methods
         // instead of ?.let and use you can null check a copy and use it a lot
-        val bt = adapter // adapter is nullable, Kotlin won't smart cast a property the way it does with a local val.
+        val bt =
+            adapter // adapter is nullable, Kotlin won't smart cast a property the way it does with a local val.
         if (bt == null) {
             onError("Bluetooth is not supported on this device")
             return
