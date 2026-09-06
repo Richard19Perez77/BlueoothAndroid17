@@ -89,11 +89,11 @@ fun DeviceDetailScreen(
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
-                    onClick = onConnectGatt,
                     enabled = device.seenOnBle &&
                         gatt.phase != GattPhase.Connecting &&
                         gatt.phase != GattPhase.Discovering &&
                         gatt.phase != GattPhase.Closing,
+                    onClick = onConnectGatt,
                 ) {
                     Text("Connect GATT")
                 }

@@ -7,7 +7,6 @@ import android.bluetooth.BluetoothGattCallback
 import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothProfile
 import android.content.Context
-import android.os.Build
 import android.util.Log
 
 /**
@@ -86,14 +85,10 @@ class GattClient(
         onPhase(GattPhase.Connecting)
         onMessage("Connecting to ${device.address}")
         // autoConnect = false → direct attempt (typical for interactive UI).
-        // TRANSPORT_LE prefers the LE radio when the device is dual-mode.
+        // TRANSPORT_LE prefers the LE radio when the device is dual-mode (API 23+; our minSdk is 24).
         // Newer SDKs deprecate some connectGatt overloads; this remains the common learning path.
         @Suppress("DEPRECATION")
-        gatt = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            device.connectGatt(context, false, callback, BluetoothDevice.TRANSPORT_LE)
-        } else {
-            device.connectGatt(context, false, callback)
-        }
+        gatt = device.connectGatt(context, false, callback, BluetoothDevice.TRANSPORT_LE)
         if (gatt == null) {
             onMessage("connectGatt() returned null")
             onPhase(GattPhase.Failed)
