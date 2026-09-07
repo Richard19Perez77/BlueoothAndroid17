@@ -1,6 +1,8 @@
-# BT Scan Lab (BlueoothAndroid17)
+# BT Scan Lab (BluetoothAndroid17)
 
 A small Android learning app for **Bluetooth Classic** and **Bluetooth Low Energy (BLE)** scanning.
+
+The GitHub repo is `BluetoothAndroid17`. The application package is still `com.rick.blueoothandroid17`.
 
 It is intentionally dual-purpose:
 
@@ -10,7 +12,7 @@ It is intentionally dual-purpose:
 ## What it does today
 
 - Checks whether Bluetooth is supported and enabled
-- Requests the correct runtime permissions for the device’s API level
+- Requests the correct runtime permissions for the device's API level
 - Scans in **Classic**, **BLE**, or **Both** modes
 - Lists devices with name, address, RSSI, bond state, and radio type
 - Tap a device → **GATT client stub**: connect → discover services → list UUIDs → disconnect
@@ -27,7 +29,7 @@ It is intentionally dual-purpose:
 
 | Setting | Value | Why |
 |---|---|---|
-| `minSdk` | 24 | Keep pre–Android 12 permission/scan behavior for comparison |
+| `minSdk` | 24 | Keep pre-Android 12 permission/scan behavior for comparison |
 | `compileSdk` / `targetSdk` | 37 | Current platform APIs |
 
 ## Project map
